@@ -4,7 +4,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import telebot
 
 # ================= CONFIGURATION =================
-BOT_TOKEN = "8846878800:AAGTO-bJ9jsgRMNhYFiQqp-jthfbXPG-Yz0"  # Yahan apna Telegram Bot Token dalein
+BOT_TOKEN = "8846878800:AAEtQAuVQZD-AEs4ph5vkrZaLIHF1wr1kwc"  # Yahan apna Telegram Bot Token dalein
 bot = telebot.TeleBot(BOT_TOKEN)
 
 BASE = "https://thunder-zone.coke2home.com"
