@@ -330,26 +330,26 @@ def main():
     print("  Thunder Trail Bot")
     print("="*44)
 
-import os
+    import os
 
-raw = os.getenv("MOBILE_NUMBER", "")
-phone = "".join(c for c in raw if c.isdigit())[-10:]
-
-    if len(phone) != 10: sys.exit("Need 10 digits.")
+    raw = os.getenv("MOBILE_NUMBER", "")
+    phone = "".join(c for c in raw if c.isdigit())[-10:]
+    if len(phone) != 10:
+        sys.exit("Need 10 digits.")
 
     if load_session(phone) and authed() == phone:
-        print("Session active — no OTP needed")
+        print("Session active - no OTP needed")
     else:
         S.cookies.clear()
         login(phone)
 
-    me = api("GET","/api/thunder-trail/me").json().get("data",{})
+    me = api("GET", "/api/thunder-trail/me").json().get("data", {})
     print(f"\n  Username   : {me.get('username')}")
     print(f"  Best Score : {me.get('best_score')}")
     print(f"  Plays Left : {me.get('plays_remaining')} / 5")
     print(f"  Resets At  : {me.get('resets_at')}")
 
-    if me.get("plays_remaining", 0) == 0:
+       if me.get("plays_remaining", 0) == 0:
         print("\nNo plays left today. Resets at midnight IST.")
         return
 
