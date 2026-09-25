@@ -1,10 +1,18 @@
 import base64, hashlib, hmac, json, os, random, sys, time
 import requests
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+import telebot
+
+# ================= CONFIGURATION =================
+BOT_TOKEN = "8846878800:AAGTO-bJ9jsgRMNhYFiQqp-jthfbXPG-Yz0"  # Yahan apna Telegram Bot Token dalein
+bot = telebot.TeleBot(BOT_TOKEN)
 
 BASE = "https://thunder-zone.coke2home.com"
 HERE = os.path.dirname(os.path.abspath(__file__))
 TU   = base64.b64decode("a9rc/DSXunC5PdkYlDB6KkX/evwfSTDUD8PQdaepxe0=")
+
+# User OTP state memory
+user_states = {}
 
 SCORING     = {"thunder":15,"thunder2":15,"gully":50,"firefox":50,"heart":0,"trap":0}
 DIST_FULL   = {"thunder":0.2,"thunder2":0.2,"heart":0,"trap":0.45,"gully":0.075,"firefox":0.075}
@@ -65,22 +73,6 @@ def authed():
     except: pass
     return None
 
-def login(phone):
-    r = api("POST","/api/auth/send-otp",{"phone_number":phone})
-    if r.status_code != 200: sys.exit(f"OTP send failed: {r.text}")
-    otp = input("Enter OTP: ").strip()
-    _wait()
-    r = api("POST","/api/auth/verify-otp",{"phone_number":phone,"otp":otp})
-    if r.status_code != 200: sys.exit(f"OTP verify failed: {r.text}")
-    v = r.json()
-    ott = v.get("one_time_token") or (v.get("data") or {}).get("one_time_token")
-    if ott:
-        _wait()
-        api("POST","/api/auth/validate-token",{"one_time_token":ott})
-        _wait()
-        api("POST","/api/auth/exchange-token",{"one_time_token":ott})
-    save_session(phone)
-
 def decrypt_drip(sid, enc):
     if not enc: return []
     try:
@@ -134,22 +126,23 @@ def chain_hash(sid, log):
     moves = ",".join(f"{e['boxId']}:{e['dir']}" for e in log)
     return hashlib.sha256(f"{sid}|{moves}".encode()).hexdigest()
 
-def run():
+def run_game(chat_id, phone):
     min_duration = 91.5
     max_duration = 93.5
     
-    print(f"\nAuto-running. Stop at {min_duration}s or HP=0.\n")
+    bot.send_message(chat_id, f"🎮 **Game Started for `{phone}`!**\nTarget duration: {min_duration}s", parse_mode="Markdown")
 
     time.sleep(random.uniform(1.2, 3.5))
     r = api("POST","/api/thunder-trail/sessions",{})
-    if r.status_code not in (200,201): sys.exit(f"Session open failed: {r.text}")
+    if r.status_code not in (200,201):
+        bot.send_message(chat_id, f"❌ Session open failed: {r.text}")
+        return
+
     d = r.json()["data"]
     sid, token = d["session_id"], d["session_token"]
     seed = d.get("seed", 0)
-    print(f"Session: {sid[:12]}... | Seed: {seed}")
 
     floats = decrypt_drip(sid, d.get("drip_enc",""))
-    print(f"Floats decrypted: {len(floats)} ({len(floats)//2} boxes)")
 
     time.sleep(random.uniform(2.5, 4.5))
 
@@ -167,10 +160,7 @@ def run():
 
     while True:
         elapsed = time.time() - t0
-        if hp <= 0:
-            print(f"\nHP reached 0. Stopping.")
-            break
-        if elapsed >= max_duration:
+        if hp <= 0 or elapsed >= max_duration:
             break
 
         gms = elapsed * 1000.0
@@ -187,7 +177,6 @@ def run():
                 ti = 2 * fb2
                 if ti > len(floats): floats.extend([0.5]*(ti-len(floats)))
                 floats[ti:ti+len(nf)] = nf
-                print(f"\nRefill: {len(nf)} floats at box #{fb2}")
 
         if gms < nxt:
             time.sleep(min(0.04, (nxt-gms)/1000.0))
@@ -197,13 +186,9 @@ def run():
         sp_ev, travel = get_tier(spawn_ms)
         nxt += sp_ev
 
-        if cursor >= len(floats):
-            print("\nOut of floats, breaking to submit safely.")
-            break
+        if cursor >= len(floats): break
         fv_t = floats[cursor]; cursor += 1
-        if cursor >= len(floats):
-            print("\nOut of floats, breaking to submit safely.")
-            break
+        if cursor >= len(floats): break
         fv_d = floats[cursor]; cursor += 1
 
         if hp < heart_gate["hp_last"]:
@@ -228,8 +213,7 @@ def run():
         last_types.append(btype)
         if len(last_types) > 2: last_types.pop(0)
 
-        swipe_at = spawn_ms + reaction_ms(travel)
-        swipe_at += random.uniform(-15, 15)
+        swipe_at = spawn_ms + reaction_ms(travel) + random.uniform(-15, 15)
 
         now = time.time()
         wait = t0 + swipe_at/1000.0 - now
@@ -273,17 +257,8 @@ def run():
                     if ti2>len(floats): floats.extend([0.5]*(ti2-len(floats)))
                     floats[ti2:ti2+len(nf2)] = nf2
 
-        sys.stdout.write(f"\r Score: {score} | HP: {hp}/3 | Box: #{bid-1} | Combo: {combo} | HB: #{hb_n} ")
-        sys.stdout.flush()
-
     dur = (time.time() - t0) * 1000.0
-    if log:
-        dur = log[-1]["atMs"] + random.uniform(280, 480)
-
-    print(f"\n\nScore   : {score}")
-    print(f"Moves   : {len(log)}")
-    print(f"Combo   : {max_combo}")
-    print(f"Dur     : {dur/1000:.1f}s")
+    if log: dur = log[-1]["atMs"] + random.uniform(280, 480)
 
     bc = {}
     for k,v in hits.items():
@@ -301,59 +276,114 @@ def run():
     sc_pay = {"session_token":token,"final_score":score,"duration_ms":round(dur,1),
               "max_combo":max_combo,"box_counts":bc,"seed":seed,"input_log":log}
     sr = api("POST",f"/api/thunder-trail/sessions/{sid}/score",sc_pay)
-    print(f"\n[Score]   {sr.status_code} | {sr.text}")
 
     _wait()
     jr_pay = {"session_token":token,"seed":seed,"input_log":log,"final_score":score,
               "duration_ms":round(dur,1),"max_combo":max_combo,"hit_counts":bc,
               "max_tier_reached":get_tier_idx(dur)+1}
     jr = api("POST",f"/api/thunder-trail/sessions/{sid}/journey",jr_pay)
-    print(f"[Journey] {jr.status_code} | {jr.text}")
 
-    time.sleep(2.0)
-    br = api("GET","/api/thunder-trail/sub-leaderboard")
-    if br.status_code == 200:
-        bd = br.json().get("data",{})
-        print("\n" + "="*50)
-        print("  LEADERBOARD - TOP 15")
-        print("="*50)
-        for e in (bd.get("entries") or [])[:15]:
-            you = " <-- YOU" if e.get("is_me") else ""
-            print(f"  #{e['rank']:>2}  {e['username']:<16}{e['score']:>6}{you}")
-        print("-"*50)
-        print(f"  Your Rank  : {bd.get('me_rank')}")
-        print(f"  Your Score : {bd.get('me_score')}")
-        print("="*50)
+    res_msg = f"🏆 **Game Finished!**\n\nScore: `{score}`\nMoves: `{len(log)}`\nCombo: `{max_combo}`\nDuration: `{dur/1000:.1f}s`"
+    bot.send_message(chat_id, res_msg, parse_mode="Markdown")
 
-def main():
-    print("="*44)
-    print("  Thunder Trail Bot")
-    print("="*44)
+# ================= TELEGRAM HANDLERS =================
 
-    import os
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    msg = (
+        "👋 **Welcome to Thunder Trail Bot!**\n\n"
+        "1️⃣ **Login:** `/login 9876543210`\n"
+        "2️⃣ **Submit OTP:** `/otp 123456`\n"
+        "3️⃣ **Start Playing:** `/run 9876543210`"
+    )
+    bot.reply_to(message, msg, parse_mode="Markdown")
 
-    raw = os.getenv("MOBILE_NUMBER", "")
-    phone = "".join(c for c in raw if c.isdigit())[-10:]
-    if len(phone) != 10:
-        sys.exit("Need 10 digits.")
-
-    if load_session(phone) and authed() == phone:
-        print("Session active - no OTP needed")
-    else:
-        S.cookies.clear()
-        login(phone)
-
-    me = api("GET", "/api/thunder-trail/me").json().get("data", {})
-    print(f"\n  Username   : {me.get('username')}")
-    print(f"  Best Score : {me.get('best_score')}")
-    print(f"  Plays Left : {me.get('plays_remaining')} / 5")
-    print(f"  Resets At  : {me.get('resets_at')}")
-
-    if me.get("plays_remaining", 0) == 0:
-        print("\nNo plays left today. Resets at midnight IST.")
+@bot.message_handler(commands=['login'])
+def handle_login(message):
+    chat_id = message.chat.id
+    args = message.text.split()
+    
+    if len(args) < 2:
+        bot.send_message(chat_id, "❌ Please specify a phone number.\nExample: `/login 9876543210`", parse_mode="Markdown")
         return
 
-    run()
+    phone = "".join(c for c in args[1] if c.isdigit())[-10:]
+    if len(phone) != 10:
+        bot.send_message(chat_id, "❌ Invalid 10-digit phone number.")
+        return
+
+    S.cookies.clear()
+    r = api("POST", "/api/auth/send-otp", {"phone_number": phone})
+    if r.status_code == 200:
+        user_states[chat_id] = phone
+        bot.send_message(chat_id, f"📲 **OTP Sent to `{phone}`!**\nReply with: `/otp YOUR_OTP`", parse_mode="Markdown")
+    else:
+        bot.send_message(chat_id, f"❌ Failed to send OTP: {r.text}")
+
+@bot.message_handler(commands=['otp'])
+def handle_otp(message):
+    chat_id = message.chat.id
+    args = message.text.split()
+    
+    if chat_id not in user_states:
+        bot.send_message(chat_id, "❌ Please send `/login <mobile_number>` first.", parse_mode="Markdown")
+        return
+
+    if len(args) < 2:
+        bot.send_message(chat_id, "❌ Please provide the OTP.\nExample: `/otp 123456`", parse_mode="Markdown")
+        return
+
+    phone = user_states[chat_id]
+    otp = args[1].strip()
+
+    r = api("POST", "/api/auth/verify-otp", {"phone_number": phone, "otp": otp})
+    if r.status_code != 200:
+        bot.send_message(chat_id, f"❌ OTP Verification Failed: {r.text}")
+        return
+
+    v = r.json()
+    ott = v.get("one_time_token") or (v.get("data") or {}).get("one_time_token")
+    if ott:
+        _wait()
+        api("POST", "/api/auth/validate-token", {"one_time_token": ott})
+        _wait()
+        api("POST", "/api/auth/exchange-token", {"one_time_token": ott})
+    
+    save_session(phone)
+    del user_states[chat_id]
+    
+    bot.send_message(chat_id, f"✅ **Login Successful for `{phone}`!**\nUse `/run {phone}` to play.", parse_mode="Markdown")
+
+@bot.message_handler(commands=['run'])
+def handle_run(message):
+    chat_id = message.chat.id
+    args = message.text.split()
+
+    if len(args) < 2:
+        bot.send_message(chat_id, "❌ Please specify phone number.\nExample: `/run 9876543210`", parse_mode="Markdown")
+        return
+
+    phone = "".join(c for c in args[1] if c.isdigit())[-10:]
+
+    if len(phone) != 10:
+        bot.send_message(chat_id, "❌ Invalid 10-digit number.", parse_mode="Markdown")
+        return
+
+    if load_session(phone) and authed() == phone:
+        me = api("GET","/api/thunder-trail/me").json().get("data",{})
+        info = (f"👤 **User:** `{me.get('username')}`\n"
+                f"🏅 **Best Score:** `{me.get('best_score')}`\n"
+                f"🎮 **Plays Left:** `{me.get('plays_remaining')} / 5`")
+        bot.send_message(chat_id, info, parse_mode="Markdown")
+
+        if me.get("plays_remaining", 0) == 0:
+            bot.send_message(chat_id, "⚠️ No plays left today. Resets at midnight IST.")
+            return
+
+        run_game(chat_id, phone)
+    else:
+        bot.send_message(chat_id, f"❌ Session not found or expired for `{phone}`.\nPlease login first using `/login {phone}`.", parse_mode="Markdown")
 
 if __name__ == "__main__":
-    main()
+    print("Bot is listening...")
+    bot.infinity_polling()
