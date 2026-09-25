@@ -349,7 +349,7 @@ def main():
     print(f"  Plays Left : {me.get('plays_remaining')} / 5")
     print(f"  Resets At  : {me.get('resets_at')}")
 
-       if me.get("plays_remaining", 0) == 0:
+    if me.get("plays_remaining", 0) == 0:
         print("\nNo plays left today. Resets at midnight IST.")
         return
 
