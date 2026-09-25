@@ -330,8 +330,11 @@ def main():
     print("  Thunder Trail Bot")
     print("="*44)
 
-    raw = input("\nMobile number (10 digits): ").strip()
-    phone = "".join(c for c in raw if c.isdigit())[-10:]
+import os
+
+raw = os.getenv("MOBILE_NUMBER", "")
+phone = "".join(c for c in raw if c.isdigit())[-10:]
+
     if len(phone) != 10: sys.exit("Need 10 digits.")
 
     if load_session(phone) and authed() == phone:
